@@ -30,6 +30,8 @@ const allowedOrigins = (
   .map((origin) => origin.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
+console.log("CORS allowed origins:", allowedOrigins);
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -40,9 +42,11 @@ app.use(
         return callback(null, true);
       }
 
-      return callback(
-        new Error(`Not allowed by CORS: ${origin}`)
-      );
+      // Do NOT throw. CORS is enforced by the browser, not the server:
+      // omitting the headers makes the browser block it, while non-browser
+      // clients (Postman, curl, mobile apps) keep working normally.
+      console.warn(`CORS: origin not allowed -> ${origin}`);
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
