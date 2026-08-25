@@ -20,12 +20,33 @@ const errorHandler = require("./middleware/error.middleware");
 
 const app = express();
 
+// Comma-separated list in CLIENT_URL, e.g.
+// CLIENT_URL=http://localhost:3000,https://mystore.vercel.app
+const allowedOrigins = (
+  process.env.CLIENT_URL ||
+  "http://localhost:3000,http://localhost:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin:
-      process.env.CLIENT_URL ||
-      "http://localhost:5173",
+    origin: (origin, callback) => {
+      // Allow non-browser clients (Postman, curl, server-to-server)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin.replace(/\/$/, ""))) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error(`Not allowed by CORS: ${origin}`)
+      );
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
