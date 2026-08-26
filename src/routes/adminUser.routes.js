@@ -1,6 +1,7 @@
 const express = require("express");
 
 const {
+  getAdminUsers,
   updateUserRole,
 } = require("../controllers/adminUser.controller");
 
@@ -17,6 +18,15 @@ const router = express.Router();
 router.use(protect);
 router.use(adminOnly);
 
+
+// ======================================================
+// GET ALL USERS
+// ======================================================
+
+router.get(
+  "/",
+  getAdminUsers
+);
 // Update user role
 router.patch(
   "/:userId/role",
