@@ -86,8 +86,6 @@ const updateUserRole = async (
 };
 
 
-const mongoose = require("mongoose");
-const User = require("../models/User");
 
 // ======================================================
 // GET ALL USERS - ADMIN
