@@ -7,14 +7,90 @@ const ProductVariant = require("../models/ProductVariant");
 // GET ALL INVENTORY
 // ======================================================
 
+// ======================================================
+// GET ALL INVENTORY
+// Search + Stock Filter + Pagination
+// ======================================================
+
 const getInventory = async (
   req,
   res,
   next
 ) => {
   try {
-    const products =
-      await Product.find({})
+    const {
+      search = "",
+      stockStatus = "all",
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+    // --------------------------------------------------
+    // PAGINATION
+    // --------------------------------------------------
+
+    const currentPage = Math.max(
+      Number(page) || 1,
+      1
+    );
+
+    const perPage = Math.min(
+      Math.max(Number(limit) || 20, 1),
+      100
+    );
+
+    const skip =
+      (currentPage - 1) * perPage;
+
+    // --------------------------------------------------
+    // SEARCH
+    // --------------------------------------------------
+
+    const searchText = search.trim();
+
+    const productFilter = {};
+
+    if (searchText) {
+      productFilter.name = {
+        $regex: searchText,
+        $options: "i",
+      };
+    }
+
+    // --------------------------------------------------
+    // STOCK FILTER
+    //
+    // 0       = out_of_stock
+    // 1 - 10  = low_stock
+    // > 10    = in_stock
+    // --------------------------------------------------
+
+    if (stockStatus === "out_of_stock") {
+      productFilter.stock = 0;
+    }
+
+    if (stockStatus === "low_stock") {
+      productFilter.stock = {
+        $gt: 0,
+        $lte: 10,
+      };
+    }
+
+    if (stockStatus === "in_stock") {
+      productFilter.stock = {
+        $gt: 10,
+      };
+    }
+
+    // --------------------------------------------------
+    // PRODUCTS
+    // --------------------------------------------------
+
+    const [
+      products,
+      totalProducts,
+    ] = await Promise.all([
+      Product.find(productFilter)
         .populate(
           "category",
           "name slug"
@@ -25,10 +101,64 @@ const getInventory = async (
         .sort({
           createdAt: -1,
         })
-        .lean();
+        .skip(skip)
+        .limit(perPage)
+        .lean(),
 
-    const variants =
-      await ProductVariant.find({})
+      Product.countDocuments(
+        productFilter
+      ),
+    ]);
+
+    // --------------------------------------------------
+    // VARIANTS
+    //
+    // Variants are returned separately because
+    // ProductVariant has its own stock.
+    // --------------------------------------------------
+
+    const variantFilter = {};
+
+    if (searchText) {
+      variantFilter.name = {
+        $regex: searchText,
+        $options: "i",
+      };
+    }
+
+    if (
+      stockStatus ===
+      "out_of_stock"
+    ) {
+      variantFilter.stock = 0;
+    }
+
+    if (
+      stockStatus ===
+      "low_stock"
+    ) {
+      variantFilter.stock = {
+        $gt: 0,
+        $lte: 10,
+      };
+    }
+
+    if (
+      stockStatus ===
+      "in_stock"
+    ) {
+      variantFilter.stock = {
+        $gt: 10,
+      };
+    }
+
+    const [
+      variants,
+      totalVariants,
+    ] = await Promise.all([
+      ProductVariant.find(
+        variantFilter
+      )
         .populate(
           "product",
           "name"
@@ -39,13 +169,57 @@ const getInventory = async (
         .sort({
           createdAt: -1,
         })
-        .lean();
+        .skip(skip)
+        .limit(perPage)
+        .lean(),
+
+      ProductVariant.countDocuments(
+        variantFilter
+      ),
+    ]);
+
+    // --------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------
 
     return res.status(200).json({
       success: true,
+
       data: {
         products,
         variants,
+
+        pagination: {
+          page: currentPage,
+          limit: perPage,
+
+          products: {
+            total:
+              totalProducts,
+
+            totalPages:
+              Math.ceil(
+                totalProducts /
+                  perPage
+              ),
+          },
+
+          variants: {
+            total:
+              totalVariants,
+
+            totalPages:
+              Math.ceil(
+                totalVariants /
+                  perPage
+              ),
+          },
+        },
+
+        filters: {
+          search: searchText,
+          stockStatus,
+        },
       },
     });
   } catch (error) {
