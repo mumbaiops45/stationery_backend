@@ -32,7 +32,7 @@ app.set("trust proxy", 1);
 // CLIENT_URL=http://localhost:3000,https://mystore.vercel.app
 const allowedOrigins = (
   process.env.CLIENT_URL ||
-  "http://localhost:3000,http://localhost:5173"
+  "http://localhost:3000,http://localhost:5000,http://localhost:5173"
 )
   .split(",")
   .map((origin) => origin.trim().replace(/\/$/, ""))
