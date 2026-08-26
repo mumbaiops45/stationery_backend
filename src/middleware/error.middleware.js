@@ -6,6 +6,20 @@ const errorHandler = (
 ) => {
   console.error(err);
 
+  // Payload too large (body-parser). The raw message is just
+  // "request entity too large", which tells the client nothing actionable.
+  if (
+    err.type ===
+      "entity.too.large" ||
+    err.statusCode === 413
+  ) {
+    return res.status(413).json({
+      success: false,
+      message:
+        "Upload is too large. Please use a smaller image.",
+    });
+  }
+
   // Duplicate field
   if (err.code === 11000) {
     const field =

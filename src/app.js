@@ -62,7 +62,24 @@ app.use(
   })
 );
 
-app.use(express.json());
+// Category/product images arrive as base64 data URLs in the JSON body, and
+// base64 inflates the payload by ~33%. The body-parser default of 100kb
+// rejected anything above a ~75kb source image with "request entity too large".
+const JSON_BODY_LIMIT =
+  process.env.JSON_BODY_LIMIT || "10mb";
+
+app.use(
+  express.json({
+    limit: JSON_BODY_LIMIT,
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: JSON_BODY_LIMIT,
+  })
+);
 
 app.use(cookieParser());
 
