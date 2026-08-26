@@ -8,6 +8,7 @@ const {
   updateCategory,
   updateCategoryStatus,
   deleteCategory,
+  getAdminCategories,
 } = require("../controllers/category.controller");
 
 const {
@@ -34,6 +35,19 @@ router.get(
 router.get(
   "/:id",
   getCategoryById
+);
+
+// ======================================================
+// ADMIN
+// ======================================================
+
+// Admin category list
+// Search + filter + sort + pagination
+router.get(
+  "/admin/all",
+  protect,
+  adminOnly,
+  getAdminCategories
 );
 
 // ======================================================

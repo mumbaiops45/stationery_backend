@@ -28,6 +28,143 @@ const getCategories = async (
   }
 };
 
+
+// ======================================================
+// GET ALL CATEGORIES - ADMIN
+// Search + Status + Sort + Pagination
+// ======================================================
+
+const getAdminCategories = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const {
+      search = "",
+      status = "all",
+      sort = "name_asc",
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    // --------------------------------------------------
+    // PAGINATION
+    // --------------------------------------------------
+
+    const currentPage = Math.max(
+      Number(page) || 1,
+      1
+    );
+
+    const perPage = Math.min(
+      Math.max(Number(limit) || 10, 1),
+      100
+    );
+
+    const skip =
+      (currentPage - 1) * perPage;
+
+    // --------------------------------------------------
+    // FILTER
+    // --------------------------------------------------
+
+    const filter = {};
+
+    // Status
+    if (status === "active") {
+      filter.isActive = true;
+    }
+
+    if (status === "inactive") {
+      filter.isActive = false;
+    }
+
+    // Search by category name
+    if (search.trim()) {
+      filter.name = {
+        $regex: search.trim(),
+        $options: "i",
+      };
+    }
+
+    // --------------------------------------------------
+    // SORT
+    // --------------------------------------------------
+
+    let sortOption = {
+      name: 1,
+    };
+
+    switch (sort) {
+      case "name_desc":
+        sortOption = {
+          name: -1,
+        };
+        break;
+
+      case "newest":
+        sortOption = {
+          createdAt: -1,
+        };
+        break;
+
+      case "oldest":
+        sortOption = {
+          createdAt: 1,
+        };
+        break;
+
+      case "name_asc":
+      default:
+        sortOption = {
+          name: 1,
+        };
+        break;
+    }
+
+    // --------------------------------------------------
+    // DATABASE QUERY
+    // --------------------------------------------------
+
+    const [
+      categories,
+      totalCategories,
+    ] = await Promise.all([
+      Category.find(filter)
+        .sort(sortOption)
+        .skip(skip)
+        .limit(perPage)
+        .lean(),
+
+      Category.countDocuments(filter),
+    ]);
+
+    // --------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+
+      data: {
+        categories,
+
+        pagination: {
+          page: currentPage,
+          limit: perPage,
+          totalCategories,
+          totalPages: Math.ceil(
+            totalCategories / perPage
+          ),
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ======================================================
 // GET CATEGORY BY ID
 // ======================================================
@@ -337,6 +474,7 @@ const deleteCategory = async (
 
 module.exports = {
   getCategories,
+  getAdminCategories,
   getCategoryById,
   getCategoryBySlug,
   createCategory,
