@@ -14,8 +14,8 @@ const cartRoutes =   require("./routes/cart.routes");
 const checkoutRoutes = require("./routes/checkout.routes");
 const paymentRoutes = require("./routes/payment.routes");
 const orderRoutes =  require("./routes/order.routes");
-const adminUserRoutes =
-  require("./routes/adminUser.routes");
+const adminUserRoutes = require("./routes/adminUser.routes");
+const adminDashboardRoutes = require("./routes/adminDashboard.routes");
 const errorHandler = require("./middleware/error.middleware");
 
 const app = express();
@@ -120,6 +120,11 @@ app.use(
 app.use(
   "/api/admin/users",
   adminUserRoutes
+);
+
+app.use(
+  "/api/admin/dashboard",
+  adminDashboardRoutes
 );
 app.use(errorHandler);
 
