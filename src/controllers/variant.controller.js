@@ -541,4 +541,4 @@ module.exports = {
   updateVariant,
   updateVariantStatus,
   deleteVariant,
-};
+}; 

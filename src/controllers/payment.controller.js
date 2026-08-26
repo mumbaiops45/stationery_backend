@@ -708,6 +708,206 @@ const verifyPayment = async (
   }
 };
 
+// ======================================================
+// GET ALL PAYMENTS - ADMIN
+// Search + Status + Sort + Pagination
+// ======================================================
+
+const getAdminPayments = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const {
+      search = "",
+      status = "all",
+      sort = "newest",
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+    // --------------------------------------------------
+    // PAGINATION
+    // --------------------------------------------------
+
+    const currentPage = Math.max(
+      Number(page) || 1,
+      1
+    );
+
+    const perPage = Math.min(
+      Math.max(Number(limit) || 20, 1),
+      100
+    );
+
+    const skip =
+      (currentPage - 1) * perPage;
+
+    // --------------------------------------------------
+    // FILTER
+    // --------------------------------------------------
+
+    const filter = {};
+
+    // Payment status
+    const allowedStatuses = [
+      "created",
+      "authorized",
+      "captured",
+      "failed",
+      "refunded",
+    ];
+
+    if (status !== "all") {
+      if (
+        !allowedStatuses.includes(status)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid payment status",
+        });
+      }
+
+      filter.status = status;
+    }
+
+    // Search Razorpay Order ID
+    // or Razorpay Payment ID
+    if (search.trim()) {
+      filter.$or = [
+        {
+          razorpayOrderId: {
+            $regex: search.trim(),
+            $options: "i",
+          },
+        },
+        {
+          razorpayPaymentId: {
+            $regex: search.trim(),
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    // --------------------------------------------------
+    // SORT
+    // --------------------------------------------------
+
+    const sortOption =
+      sort === "oldest"
+        ? { createdAt: 1 }
+        : { createdAt: -1 };
+
+    // --------------------------------------------------
+    // GET PAYMENTS
+    // --------------------------------------------------
+
+    const [
+      payments,
+      totalPayments,
+    ] = await Promise.all([
+      Payment.find(filter)
+        .populate(
+          "user",
+          "name email phone"
+        )
+        .select(
+          "-razorpaySignature"
+        )
+        .sort(sortOption)
+        .skip(skip)
+        .limit(perPage)
+        .lean(),
+
+      Payment.countDocuments(filter),
+    ]);
+
+    // --------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+
+      data: {
+        payments,
+
+        pagination: {
+          page: currentPage,
+          limit: perPage,
+          totalPayments,
+          totalPages: Math.ceil(
+            totalPayments / perPage
+          ),
+        },
+
+        filters: {
+          search: search.trim(),
+          status,
+          sort,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+// ======================================================
+// GET PAYMENT BY ID - ADMIN
+// ======================================================
+
+const getAdminPaymentById = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const { id } = req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment ID",
+      });
+    }
+
+    const payment =
+      await Payment.findById(id)
+        .populate(
+          "user",
+          "name email phone"
+        )
+        .select(
+          "-razorpaySignature"
+        )
+        .lean();
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        payment,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
 const generateOrderNumber = () => {
   const timestamp = Date.now();
 
@@ -722,4 +922,6 @@ const generateOrderNumber = () => {
 module.exports = {
   createPaymentOrder,
   verifyPayment,
+  getAdminPayments,
+  getAdminPaymentById,
 };
