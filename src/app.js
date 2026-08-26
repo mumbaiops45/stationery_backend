@@ -6,14 +6,15 @@ const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
 const addressRoutes = require("./routes/address.routes");
 const categoryRoutes = require("./routes/category.routes");
-const productRoutes =  require("./routes/product.routes");
-const variantRoutes =  require("./routes/variant.routes");
+const productRoutes = require("./routes/product.routes");
+const variantRoutes = require("./routes/variant.routes");
 const inventoryRoutes = require("./routes/inventory.routes");
-const wishlistRoutes =  require("./routes/wishlist.routes");
-const cartRoutes =   require("./routes/cart.routes");
+const wishlistRoutes = require("./routes/wishlist.routes");
+const cartRoutes = require("./routes/cart.routes");
 const checkoutRoutes = require("./routes/checkout.routes");
 const paymentRoutes = require("./routes/payment.routes");
-const orderRoutes =  require("./routes/order.routes");
+const orderRoutes = require("./routes/order.routes");
+const adminOrderRoutes = require("./routes/adminOrder.routes");
 const adminUserRoutes = require("./routes/adminUser.routes");
 const adminDashboardRoutes = require("./routes/adminDashboard.routes");
 const errorHandler = require("./middleware/error.middleware");
@@ -101,7 +102,7 @@ app.use(
 app.use(
   "/api/cart",
   cartRoutes
-); 
+);
 
 app.use(
   "/api/checkout",
@@ -116,7 +117,10 @@ app.use(
   "/api/orders",
   orderRoutes
 );
-
+app.use(
+  "/api/admin/orders",
+  adminOrderRoutes
+);
 app.use(
   "/api/admin/users",
   adminUserRoutes
