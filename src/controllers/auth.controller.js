@@ -37,20 +37,39 @@ const getRefreshExpiry = () => {
   );
 };
 
-const setRefreshCookie = (res, token) => {
-  const isProduction =
-    process.env.NODE_ENV === "production";
+// Cross-site cookies (admin/storefront on a different origin than the API)
+// require SameSite=None, and SameSite=None is only accepted with Secure.
+// Deliberately NOT gated on NODE_ENV: a missing/incorrect NODE_ENV on the
+// host silently downgraded this to SameSite=Lax, which browsers refuse to
+// store cross-site, so session restore on reload always failed.
+// Secure works on http://localhost too — browsers treat localhost as a
+// secure context. Override only for a non-localhost plain-HTTP setup.
+const cookieSameSite = (
+  process.env.COOKIE_SAMESITE || "none"
+).toLowerCase();
 
+const cookieSecure =
+  process.env.COOKIE_SECURE !== undefined
+    ? process.env.COOKIE_SECURE === "true"
+    : cookieSameSite === "none";
+
+const REFRESH_COOKIE_PATH = "/api/auth";
+
+// Shared by set and clear: clearCookie only matches the browser's cookie when
+// path/sameSite/secure/httpOnly are identical, so these must never drift.
+const refreshCookieOptions = () => ({
+  httpOnly: true,
+  secure: cookieSecure,
+  sameSite: cookieSameSite,
+  path: REFRESH_COOKIE_PATH,
+});
+
+const setRefreshCookie = (res, token) => {
   res.cookie(
     REFRESH_COOKIE_NAME,
     token,
     {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction
-        ? "none"
-        : "lax",
-      path: "/api/auth",
+      ...refreshCookieOptions(),
       maxAge:
         Number(
           process.env
@@ -66,19 +85,9 @@ const setRefreshCookie = (res, token) => {
 };
 
 const clearRefreshCookie = (res) => {
-  const isProduction =
-    process.env.NODE_ENV === "production";
-
   res.clearCookie(
     REFRESH_COOKIE_NAME,
-    {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction
-        ? "none"
-        : "lax",
-      path: "/api/auth",
-    }
+    refreshCookieOptions()
   );
 };
 

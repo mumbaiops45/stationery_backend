@@ -21,6 +21,11 @@ const errorHandler = require("./middleware/error.middleware");
 
 const app = express();
 
+// Render (and most PaaS hosts) terminate TLS at their proxy, so Express sees a
+// plain HTTP connection. Without this, req.secure is false and Secure cookies
+// / rate-limit client IPs behave as if the request were not over HTTPS.
+app.set("trust proxy", 1);
+
 // Comma-separated list in CLIENT_URL, e.g.
 // CLIENT_URL=http://localhost:3000,https://mystore.vercel.app
 const allowedOrigins = (
