@@ -3,6 +3,7 @@ const express = require("express");
 const {
   getMyOrders,
   getMyOrder,
+  placeCodOrder,
   cancelMyOrder,
 } = require("../controllers/order.controller");
 
@@ -22,6 +23,13 @@ router.get(
 router.get(
   "/:id",
   getMyOrder
+);
+
+// Place a cash-on-delivery order.
+// The online route is POST /api/payment/create-order.
+router.post(
+  "/",
+  placeCodOrder
 );
 
 // Cancel an order (before dispatch only)

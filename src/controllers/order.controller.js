@@ -1,13 +1,29 @@
 const mongoose = require("mongoose");
 
 const Order = require("../models/Order");
+const Cart = require("../models/Cart");
+const Address = require("../models/Address");
+
 const {
   ORDER_STATUSES,
   ALLOWED_TRANSITIONS,
   CUSTOMER_CANCELLABLE,
   canTransition,
   restoreOrderStock,
+  deductStockForCart,
+  calculateTotals,
+  codRejectionReason,
 } = require("../utils/orderStock");
+
+const generateOrderNumber = () => {
+  const timestamp = Date.now();
+
+  const random = Math.floor(
+    1000 + Math.random() * 9000
+  );
+
+  return `ORD-${timestamp}-${random}`;
+};
 
 // ======================================================
 // GET MY ORDERS
@@ -306,6 +322,16 @@ const cancelMyOrder = async (
     order.cancelledAt =
       new Date();
 
+    if (
+      order.paymentMethod ===
+        "cod" &&
+      order.paymentStatus ===
+        "pending"
+    ) {
+      order.paymentStatus =
+        "failed";
+    }
+
     order.cancelReason =
       (reason || "Cancelled by customer")
         .toString()
@@ -519,6 +545,33 @@ const updateOrderStatus = async (
     ) {
       order.deliveredAt =
         new Date();
+
+      // Handing over a COD parcel is the moment the cash
+      // is collected, so the payment settles with it.
+      if (
+        order.paymentMethod ===
+          "cod" &&
+        order.paymentStatus ===
+          "pending"
+      ) {
+        order.paymentStatus =
+          "captured";
+
+        order.paidAt = new Date();
+      }
+    }
+
+    // An unpaid COD order that is cancelled was never
+    // owed, so record it as failed rather than pending.
+    if (
+      orderStatus === "cancelled" &&
+      order.paymentMethod ===
+        "cod" &&
+      order.paymentStatus ===
+        "pending"
+    ) {
+      order.paymentStatus =
+        "failed";
     }
 
     order.orderStatus =
@@ -566,9 +619,212 @@ const updateOrderStatus = async (
   }
 };
 
+
+// ======================================================
+// PLACE A CASH ON DELIVERY ORDER
+//
+// The online path needs Razorpay to confirm the money
+// before an order may exist. COD has no such gate, so the
+// order is created here and paid for at the door.
+//
+// Stock still comes out now — otherwise the same unit
+// could be promised to several COD customers.
+// ======================================================
+
+const placeCodOrder = async (
+  req,
+  res,
+  next
+) => {
+  const session =
+    await mongoose.startSession();
+
+  try {
+    const userId =
+      req.user.userId;
+
+    const { addressId } =
+      req.body;
+
+    if (
+      !addressId ||
+      !mongoose.Types.ObjectId.isValid(
+        addressId
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "A valid addressId is required",
+      });
+    }
+
+    const address =
+      await Address.findOne({
+        _id: addressId,
+        user: userId,
+      });
+
+    if (!address) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Shipping address not found",
+      });
+    }
+
+    session.startTransaction();
+
+    const cart =
+      await Cart.findOne({
+        user: userId,
+      }).session(session);
+
+    if (
+      !cart ||
+      !cart.items.length
+    ) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message: "Cart is empty",
+      });
+    }
+
+    // Validates availability and takes the stock
+    const {
+      orderItems,
+      subtotal,
+    } = await deductStockForCart(
+      cart,
+      session
+    );
+
+    const {
+      shipping,
+      total,
+    } = calculateTotals(subtotal);
+
+    // Checked after totals because the cap is on order value
+    const rejection =
+      codRejectionReason(total);
+
+    if (rejection) {
+      await session.abortTransaction();
+
+      return res.status(409).json({
+        success: false,
+        message: rejection,
+      });
+    }
+
+    const [order] =
+      await Order.create(
+        [
+          {
+            orderNumber:
+              generateOrderNumber(),
+
+            user: userId,
+
+            items: orderItems,
+
+            shippingAddress: {
+              name: address.name,
+              phone: address.phone,
+              addressLine1:
+                address.addressLine1,
+              addressLine2:
+                address.addressLine2,
+              city: address.city,
+              state: address.state,
+              postalCode:
+                address.postalCode,
+              country:
+                address.country,
+            },
+
+            subtotal,
+
+            shipping,
+
+            total,
+
+            paymentMethod: "cod",
+
+            // Nothing has been collected yet
+            paymentStatus:
+              "pending",
+
+            orderStatus:
+              "confirmed",
+          },
+        ],
+        {
+          session,
+        }
+      );
+
+    cart.items = [];
+
+    await cart.save({
+      session,
+    });
+
+    await session.commitTransaction();
+
+    return res.status(201).json({
+      success: true,
+      message:
+        "Order placed successfully. Pay on delivery.",
+      data: {
+        order: {
+          id: order._id,
+          orderNumber:
+            order.orderNumber,
+          subtotal: order.subtotal,
+          shipping: order.shipping,
+          total: order.total,
+          paymentMethod:
+            order.paymentMethod,
+          paymentStatus:
+            order.paymentStatus,
+          orderStatus:
+            order.orderStatus,
+        },
+      },
+    });
+  } catch (error) {
+    if (
+      session.inTransaction()
+    ) {
+      await session.abortTransaction();
+    }
+
+    // Stock and availability problems are the customer's
+    // to act on, not server faults.
+    if (
+      /Insufficient stock|no longer available|requires a variant/i.test(
+        error.message
+      )
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    next(error);
+  } finally {
+    session.endSession();
+  }
+};
+
 module.exports = {
   getMyOrders,
   getMyOrder,
+  placeCodOrder,
   cancelMyOrder,
   getAdminOrders,
   getAdminOrder,

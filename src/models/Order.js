@@ -153,33 +153,55 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // How the customer chose to pay.
+    // "online" clears through Razorpay before the order
+    // exists; "cod" creates the order straight away and
+    // the money is collected on the doorstep.
+    paymentMethod: {
+      type: String,
+      enum: ["online", "cod"],
+      default: "online",
+      required: true,
+      index: true,
+    },
+
+    // Razorpay fields below are null on a COD order,
+    // which is why none of them are required.
     payment: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Payment",
-      required: true,
+      default: null,
     },
 
     razorpayOrderId: {
       type: String,
-      required: true,
+      default: null,
       index: true,
     },
 
     razorpayPaymentId: {
       type: String,
-      required: true,
+      default: null,
       index: true,
     },
 
     paymentStatus: {
       type: String,
       enum: [
+        "pending",
         "captured",
         "failed",
         "refunded",
       ],
       default: "captured",
       index: true,
+    },
+
+    // Stamped when money actually lands: at verification
+    // for online, at delivery for COD.
+    paidAt: {
+      type: Date,
+      default: null,
     },
 
     orderStatus: {

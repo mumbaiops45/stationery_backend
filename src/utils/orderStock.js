@@ -121,10 +121,240 @@ const restoreOrderStock = async (
   return true;
 };
 
+// ======================================================
+// COD AVAILABILITY
+//
+// Cash on delivery carries real risk (refused parcels),
+// so it can be switched off or capped without a redeploy.
+// ======================================================
+
+const isCodEnabled = () =>
+  process.env.COD_ENABLED !==
+  "false";
+
+const getCodMaxOrderValue = () => {
+  const raw = Number(
+    process.env
+      .COD_MAX_ORDER_VALUE
+  );
+
+  return Number.isFinite(raw) &&
+    raw > 0
+    ? raw
+    : null;
+};
+
+// Returns null when COD is allowed, or the reason it is not.
+const codRejectionReason = (
+  total
+) => {
+  if (!isCodEnabled()) {
+    return "Cash on delivery is currently unavailable";
+  }
+
+  const max =
+    getCodMaxOrderValue();
+
+  if (max && total > max) {
+    return `Cash on delivery is only available on orders up to ₹${max}`;
+  }
+
+  return null;
+};
+
+// ======================================================
+// DEDUCT STOCK FOR A CART
+//
+// Builds the order line items and takes the stock in one
+// pass. Each deduction is a conditional update, so two
+// shoppers racing for the last unit cannot both win.
+//
+// Throws on any problem: the caller runs this inside a
+// transaction and aborts.
+// ======================================================
+
+const deductStockForCart = async (
+  cart,
+  session
+) => {
+  const Product = require("../models/Product");
+  const ProductVariant = require("../models/ProductVariant");
+
+  const orderItems = [];
+
+  let subtotal = 0;
+
+  for (const cartItem of cart.items) {
+    const product =
+      await Product.findOne({
+        _id: cartItem.product,
+        isActive: true,
+      }).session(session);
+
+    if (!product) {
+      throw new Error(
+        "A product in your cart is no longer available"
+      );
+    }
+
+    let price = product.price;
+    let variant = null;
+
+    if (product.hasVariants) {
+      if (!cartItem.variant) {
+        throw new Error(
+          `${product.name} requires a variant`
+        );
+      }
+
+      variant =
+        await ProductVariant.findOne({
+          _id: cartItem.variant,
+          product: product._id,
+          isActive: true,
+        }).session(session);
+
+      if (!variant) {
+        throw new Error(
+          `${product.name} variant is no longer available`
+        );
+      }
+
+      const updatedVariant =
+        await ProductVariant.findOneAndUpdate(
+          {
+            _id: variant._id,
+            stock: {
+              $gte:
+                cartItem.quantity,
+            },
+          },
+          {
+            $inc: {
+              stock:
+                -cartItem.quantity,
+            },
+          },
+          {
+            new: true,
+            session,
+          }
+        );
+
+      if (!updatedVariant) {
+        throw new Error(
+          `Insufficient stock for ${product.name}`
+        );
+      }
+
+      price =
+        updatedVariant.price;
+    } else {
+      const updatedProduct =
+        await Product.findOneAndUpdate(
+          {
+            _id: product._id,
+            stock: {
+              $gte:
+                cartItem.quantity,
+            },
+          },
+          {
+            $inc: {
+              stock:
+                -cartItem.quantity,
+            },
+          },
+          {
+            new: true,
+            session,
+          }
+        );
+
+      if (!updatedProduct) {
+        throw new Error(
+          `Insufficient stock for ${product.name}`
+        );
+      }
+
+      price =
+        updatedProduct.price;
+    }
+
+    const itemTotal =
+      price * cartItem.quantity;
+
+    subtotal += itemTotal;
+
+    orderItems.push({
+      product: product._id,
+
+      productName: product.name,
+
+      productImage:
+        product.image?.url || null,
+
+      variant: variant
+        ? variant._id
+        : null,
+
+      variantName: variant
+        ? variant.name
+        : null,
+
+      quantity:
+        cartItem.quantity,
+
+      price,
+
+      itemTotal,
+    });
+  }
+
+  return {
+    orderItems,
+    subtotal,
+  };
+};
+
+// ======================================================
+// TOTALS
+//
+// One place, so checkout, COD and Razorpay can never
+// quote different numbers for the same cart.
+// ======================================================
+
+const FREE_SHIPPING_THRESHOLD = 500;
+const SHIPPING_FLAT = 50;
+
+const calculateTotals = (
+  subtotal
+) => {
+  const shipping =
+    subtotal >=
+    FREE_SHIPPING_THRESHOLD
+      ? 0
+      : SHIPPING_FLAT;
+
+  return {
+    subtotal,
+    shipping,
+    total: subtotal + shipping,
+  };
+};
+
 module.exports = {
   ORDER_STATUSES,
   ALLOWED_TRANSITIONS,
   CUSTOMER_CANCELLABLE,
   canTransition,
   restoreOrderStock,
+  deductStockForCart,
+  calculateTotals,
+  isCodEnabled,
+  getCodMaxOrderValue,
+  codRejectionReason,
+  FREE_SHIPPING_THRESHOLD,
+  SHIPPING_FLAT,
 };
+

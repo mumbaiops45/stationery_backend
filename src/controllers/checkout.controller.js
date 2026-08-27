@@ -4,6 +4,9 @@ const Cart = require("../models/Cart");
 const Address = require("../models/Address");
 const Product = require("../models/Product");
 const ProductVariant = require("../models/ProductVariant");
+const {
+  codRejectionReason,
+} = require("../utils/orderStock");
 
 // ======================================================
 // CHECKOUT PREVIEW
@@ -199,6 +202,33 @@ const getCheckout = async (req, res, next) => {
             shipping,
             total,
           },
+
+          // Which buttons the checkout screen should offer.
+          // Availability is decided here so the frontend
+          // never has to know the COD rules.
+          paymentMethods: [
+            {
+              id: "online",
+              label:
+                "Pay online (UPI / Card / Netbanking)",
+              available: true,
+              unavailableReason:
+                null,
+            },
+            {
+              id: "cod",
+              label:
+                "Cash on delivery",
+              available:
+                codRejectionReason(
+                  total
+                ) === null,
+              unavailableReason:
+                codRejectionReason(
+                  total
+                ),
+            },
+          ],
         },
       },
     });
