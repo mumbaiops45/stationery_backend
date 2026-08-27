@@ -2,6 +2,8 @@ const express = require("express");
 
 const {
   getAdminOrders,
+  getAdminOrder,
+  updateOrderStatus,
 } = require("../controllers/order.controller");
 
 const {
@@ -22,6 +24,18 @@ router.use(adminOnly);
 router.get(
   "/",
   getAdminOrders
+);
+
+// Get one order
+router.get(
+  "/:id",
+  getAdminOrder
+);
+
+// Move an order through its lifecycle
+router.patch(
+  "/:id/status",
+  updateOrderStatus
 );
 
 module.exports = router;

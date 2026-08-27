@@ -919,9 +919,334 @@ const generateOrderNumber = () => {
   return `ORD-${timestamp}-${random}`;
 };
 
+// ======================================================
+// REFUND A PAYMENT - ADMIN
+//
+// Refunds through Razorpay, then marks the payment and
+// its order as refunded. Cancelling the order (and
+// returning stock) is a separate, deliberate step:
+// PATCH /api/admin/orders/:id/status
+// ======================================================
+
+const refundPayment = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const { id } = req.params;
+
+    const { amount, reason } =
+      req.body || {};
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid payment ID",
+      });
+    }
+
+    const payment =
+      await Payment.findById(id);
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Payment not found",
+      });
+    }
+
+    if (
+      payment.status ===
+      "refunded"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "This payment has already been refunded",
+      });
+    }
+
+    if (
+      payment.status !==
+      "captured"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          `Only a captured payment can be refunded. This one is ${payment.status}.`,
+      });
+    }
+
+    if (
+      !payment.razorpayPaymentId
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "This payment has no Razorpay payment id to refund against",
+      });
+    }
+
+    // Partial refunds are allowed, full is the default.
+    const refundAmount =
+      amount === undefined
+        ? payment.amount
+        : Number(amount);
+
+    if (
+      Number.isNaN(refundAmount) ||
+      refundAmount <= 0 ||
+      refundAmount >
+        payment.amount
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          `amount must be a number between 1 and ${payment.amount}`,
+      });
+    }
+
+    const refund =
+      await razorpay.payments.refund(
+        payment.razorpayPaymentId,
+        {
+          // Razorpay works in paise
+          amount:
+            refundAmount * 100,
+
+          notes: {
+            reason:
+              reason ||
+              "Refunded by admin",
+          },
+        }
+      );
+
+    payment.status = "refunded";
+
+    await payment.save();
+
+    await Order.updateOne(
+      {
+        payment: payment._id,
+      },
+      {
+        $set: {
+          paymentStatus:
+            "refunded",
+        },
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Payment refunded successfully",
+      data: {
+        refund: {
+          id: refund.id,
+          amount:
+            refund.amount / 100,
+          status: refund.status,
+        },
+
+        payment: {
+          id: payment._id,
+          status:
+            payment.status,
+        },
+      },
+    });
+  } catch (error) {
+    // Razorpay errors carry the useful text one level down
+    if (error?.error?.description) {
+      error.message =
+        error.error.description;
+
+      error.statusCode = 400;
+    }
+
+    next(error);
+  }
+};
+
+// ======================================================
+// RAZORPAY WEBHOOK
+//
+// Razorpay calls this server-to-server, so it still fires
+// when the customer closes the tab before /verify runs.
+// It is the record that money actually moved.
+//
+// Signature is HMAC-SHA256 over the RAW body, so app.js
+// stashes req.rawBody before JSON parsing.
+// ======================================================
+
+const razorpayWebhook = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const secret =
+      process.env
+        .RAZORPAY_WEBHOOK_SECRET;
+
+    if (!secret) {
+      console.error(
+        "Webhook received but RAZORPAY_WEBHOOK_SECRET is not set"
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Webhook secret is not configured",
+      });
+    }
+
+    const signature =
+      req.headers[
+        "x-razorpay-signature"
+      ];
+
+    const raw =
+      req.rawBody ||
+      Buffer.from(
+        JSON.stringify(
+          req.body || {}
+        )
+      );
+
+    const expected = crypto
+      .createHmac("sha256", secret)
+      .update(raw)
+      .digest("hex");
+
+    const expectedBuffer =
+      Buffer.from(expected, "utf8");
+
+    const receivedBuffer =
+      Buffer.from(
+        signature || "",
+        "utf8"
+      );
+
+    const valid =
+      expectedBuffer.length ===
+        receivedBuffer.length &&
+      crypto.timingSafeEqual(
+        expectedBuffer,
+        receivedBuffer
+      );
+
+    if (!valid) {
+      console.warn(
+        "Rejected Razorpay webhook: bad signature"
+      );
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid webhook signature",
+      });
+    }
+
+    const event = req.body?.event;
+
+    const entity =
+      req.body?.payload?.payment
+        ?.entity;
+
+    // Always 200 past this point. A non-2xx makes Razorpay
+    // retry, and a retry storm helps nobody.
+    if (
+      event !== "payment.captured" ||
+      !entity
+    ) {
+      return res.status(200).json({
+        success: true,
+        message: `Ignored event: ${event}`,
+      });
+    }
+
+    const razorpayOrderId =
+      entity.order_id;
+
+    const payment =
+      await Payment.findOne({
+        razorpayOrderId,
+      });
+
+    if (!payment) {
+      console.error(
+        `Webhook: captured payment for unknown order ${razorpayOrderId}`
+      );
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "No matching payment record",
+      });
+    }
+
+    if (
+      payment.status !== "captured"
+    ) {
+      payment.status = "captured";
+
+      payment.razorpayPaymentId =
+        entity.id;
+
+      payment.verifiedAt =
+        new Date();
+
+      await payment.save();
+    }
+
+    const order =
+      await Order.findOne({
+        razorpayOrderId,
+      });
+
+    if (!order) {
+      // Money taken, no order. Loud on purpose: this is
+      // the case that needs a human before the customer
+      // notices.
+      console.error(
+        "PAYMENT WITHOUT ORDER - reconcile manually:",
+        {
+          razorpayOrderId,
+          razorpayPaymentId:
+            entity.id,
+          amount:
+            entity.amount / 100,
+          email: entity.email,
+          contact: entity.contact,
+        }
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Webhook processed",
+      data: {
+        orderExists: Boolean(order),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createPaymentOrder,
   verifyPayment,
+  razorpayWebhook,
   getAdminPayments,
   getAdminPaymentById,
+  refundPayment,
 };

@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
+const Order = require("../models/Order");
 
 // ======================================================
 // UPDATE USER ROLE
@@ -240,7 +241,188 @@ const getAdminUsers = async (
     next(error);
   }
 };
+// ======================================================
+// GET ONE USER - ADMIN
+// ======================================================
+
+const getAdminUser = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const { userId } = req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(userId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const user =
+      await User.findById(userId)
+        .select("-password")
+        .lean();
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Order summary, so the admin does not have to
+    // cross-reference the orders screen by hand.
+    const [
+      orderCount,
+      recentOrders,
+      spend,
+    ] = await Promise.all([
+      Order.countDocuments({
+        user: user._id,
+      }),
+
+      Order.find({
+        user: user._id,
+      })
+        .select(
+          "orderNumber total orderStatus paymentStatus createdAt"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .limit(5)
+        .lean(),
+
+      Order.aggregate([
+        {
+          $match: {
+            user: user._id,
+            orderStatus: {
+              $ne: "cancelled",
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: {
+              $sum: "$total",
+            },
+          },
+        },
+      ]),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user,
+
+        stats: {
+          orderCount,
+
+          totalSpent:
+            spend[0]?.total || 0,
+        },
+
+        recentOrders,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ======================================================
+// SUSPEND / REACTIVATE USER - ADMIN
+//
+// login already refuses an inactive account, so flipping
+// this flag is what actually blocks someone.
+// ======================================================
+
+const updateUserStatus = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const { userId } = req.params;
+
+    const { isActive } = req.body;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(userId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    if (
+      typeof isActive !== "boolean"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "isActive must be true or false",
+      });
+    }
+
+    const user =
+      await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Locking yourself out is never intentional.
+    if (
+      user._id.toString() ===
+      req.user.userId
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "You cannot suspend your own account",
+      });
+    }
+
+    user.isActive = isActive;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: isActive
+        ? "User reactivated successfully"
+        : "User suspended successfully",
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isActive:
+            user.isActive,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   updateUserRole,
+  updateUserStatus,
   getAdminUsers,
+  getAdminUser,
 };

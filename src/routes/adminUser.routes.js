@@ -2,7 +2,9 @@ const express = require("express");
 
 const {
   getAdminUsers,
+  getAdminUser,
   updateUserRole,
+  updateUserStatus,
 } = require("../controllers/adminUser.controller");
 
 const {
@@ -31,6 +33,19 @@ router.get(
 router.patch(
   "/:userId/role",
   updateUserRole
+);
+
+// Suspend or reactivate an account
+router.patch(
+  "/:userId/status",
+  updateUserStatus
+);
+
+// Get one user with their order summary
+// Declared last so it does not shadow the routes above
+router.get(
+  "/:userId",
+  getAdminUser
 );
 
 module.exports = router;

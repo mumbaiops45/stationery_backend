@@ -201,6 +201,23 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
+    cancelReason: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: [
+        300,
+        "Cancel reason cannot exceed 300 characters",
+      ],
+    },
+
+    // Set the moment stock is returned to inventory.
+    // Guards against a second cancel restoring twice.
+    stockRestoredAt: {
+      type: Date,
+      default: null,
+    },
+
     deliveredAt: {
       type: Date,
       default: null,

@@ -72,6 +72,19 @@ const JSON_BODY_LIMIT =
 app.use(
   express.json({
     limit: JSON_BODY_LIMIT,
+
+    // Razorpay signs the exact bytes it sent, so the webhook
+    // needs the raw buffer. Capturing it here (rather than a
+    // separate raw parser) keeps every other route untouched.
+    verify: (req, res, buf) => {
+      if (
+        req.originalUrl.includes(
+          "/webhook"
+        )
+      ) {
+        req.rawBody = buf;
+      }
+    },
   })
 );
 

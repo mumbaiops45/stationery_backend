@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createPaymentOrder,
   verifyPayment,
+  razorpayWebhook,
 } = require("../controllers/payment.controller");
 
 const {
@@ -11,7 +12,20 @@ const {
 
 const router = express.Router();
 
-// All payment APIs require login
+// ======================================================
+// WEBHOOK
+//
+// Razorpay is a server, not a logged-in user, so this is
+// declared before router.use(protect). It authenticates
+// with a signature instead of a token.
+// ======================================================
+
+router.post(
+  "/webhook",
+  razorpayWebhook
+);
+
+// Every route below requires login
 router.use(protect);
 
 // Create Razorpay order

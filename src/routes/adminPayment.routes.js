@@ -3,6 +3,7 @@ const express = require("express");
 const {
   getAdminPayments,
   getAdminPaymentById,
+  refundPayment,
 } = require(
   "../controllers/payment.controller"
 );
@@ -33,6 +34,12 @@ router.get(
 router.get(
   "/:id",
   getAdminPaymentById
+);
+
+// Refund a captured payment
+router.post(
+  "/:id/refund",
+  refundPayment
 );
 
 module.exports = router;

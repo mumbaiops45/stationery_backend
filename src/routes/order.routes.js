@@ -3,6 +3,7 @@ const express = require("express");
 const {
   getMyOrders,
   getMyOrder,
+  cancelMyOrder,
 } = require("../controllers/order.controller");
 
 const {
@@ -21,6 +22,12 @@ router.get(
 router.get(
   "/:id",
   getMyOrder
+);
+
+// Cancel an order (before dispatch only)
+router.patch(
+  "/:id/cancel",
+  cancelMyOrder
 );
 
 module.exports = router;
