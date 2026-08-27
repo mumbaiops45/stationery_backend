@@ -32,6 +32,14 @@ const categorySchema = new mongoose.Schema(
         default: "",
         trim: true,
       },
+
+      // Cloudinary public_id, kept so the asset can be
+      // deleted when the image is replaced or removed.
+      publicId: {
+        type: String,
+        default: "",
+        trim: true,
+      },
     },
 
     isActive: {

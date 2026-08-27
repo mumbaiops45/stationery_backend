@@ -1,4 +1,8 @@
 const Category = require("../models/Category");
+const {
+  resolveImageInput,
+  destroyImage,
+} = require("../utils/cloudinaryUpload");
 
 // ======================================================
 // GET ALL ACTIVE CATEGORIES
@@ -285,15 +289,23 @@ const createCategory = async (
       });
     }
 
+    // A base64 data URL is pushed to Cloudinary here so the
+    // blob never reaches MongoDB. An https URL is kept as-is.
+    const uploadedImage =
+      await resolveImageInput(
+        image,
+        "categories"
+      );
+
     const category =
       await Category.create({
         name: name.trim(),
         slug: generatedSlug,
         description:
           description || "",
-        image: {
-          url:
-            image?.url || "",
+        image: uploadedImage || {
+          url: "",
+          publicId: "",
         },
       });
 
@@ -359,10 +371,31 @@ const updateCategory = async (
     }
 
     if (image !== undefined) {
-      category.image = {
-        url:
-          image?.url || "",
-      };
+      const resolvedImage =
+        await resolveImageInput(
+          image,
+          "categories"
+        );
+
+      if (resolvedImage) {
+        const previousPublicId =
+          category.image
+            ?.publicId;
+
+        category.image =
+          resolvedImage;
+
+        // Drop the old asset once the new one is stored.
+        if (
+          previousPublicId &&
+          previousPublicId !==
+            resolvedImage.publicId
+        ) {
+          await destroyImage(
+            previousPublicId
+          );
+        }
+      }
     }
 
     await category.save();

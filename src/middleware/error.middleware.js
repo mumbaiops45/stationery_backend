@@ -20,6 +20,27 @@ const errorHandler = (
     });
   }
 
+  // Multer upload errors
+  if (
+    err.name === "MulterError"
+  ) {
+    const messages = {
+      LIMIT_FILE_SIZE:
+        "Image is too large. Maximum size is 5MB.",
+      LIMIT_FILE_COUNT:
+        "Only one image can be uploaded at a time.",
+      LIMIT_UNEXPECTED_FILE:
+        "Unexpected file field. Send the image in the 'image' field.",
+    };
+
+    return res.status(400).json({
+      success: false,
+      message:
+        messages[err.code] ||
+        "Image upload failed",
+    });
+  }
+
   // Duplicate field
   if (err.code === 11000) {
     const field =

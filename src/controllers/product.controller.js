@@ -1,6 +1,10 @@
 const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
+const {
+  resolveImageInput,
+  destroyImage,
+} = require("../utils/cloudinaryUpload");
 
 // ======================================================
 // HELPER - CREATE SLUG
@@ -526,6 +530,19 @@ const createProduct = async (
     }
 
     // --------------------------------------------------
+    // IMAGE
+    //
+    // A base64 data URL is pushed to Cloudinary here so the
+    // blob never reaches MongoDB. An https URL is kept as-is.
+    // --------------------------------------------------
+
+    const uploadedImage =
+      await resolveImageInput(
+        image,
+        "products"
+      );
+
+    // --------------------------------------------------
     // CREATE
     // --------------------------------------------------
 
@@ -543,9 +560,9 @@ const createProduct = async (
             ? null
             : Number(compareAtPrice),
 
-        image: {
-          url:
-            image?.url || "",
+        image: uploadedImage || {
+          url: "",
+          publicId: "",
         },
 
         stock: productStock,
@@ -741,10 +758,31 @@ const updateProduct = async (
 
     // Image
     if (image !== undefined) {
-      product.image = {
-        url:
-          image?.url || "",
-      };
+      const resolvedImage =
+        await resolveImageInput(
+          image,
+          "products"
+        );
+
+      if (resolvedImage) {
+        const previousPublicId =
+          product.image
+            ?.publicId;
+
+        product.image =
+          resolvedImage;
+
+        // Drop the old asset once the new one is stored.
+        if (
+          previousPublicId &&
+          previousPublicId !==
+            resolvedImage.publicId
+        ) {
+          await destroyImage(
+            previousPublicId
+          );
+        }
+      }
     }
 
     // Stock

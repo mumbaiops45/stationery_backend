@@ -536,7 +536,7 @@ const verifyPayment = async (
           product.name,
 
         productImage:
-          product.images?.[0]?.url ||
+          product.image?.url ||
           null,
 
         variant:
