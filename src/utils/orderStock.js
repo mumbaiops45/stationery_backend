@@ -122,6 +122,68 @@ const restoreOrderStock = async (
 };
 
 // ======================================================
+// CANCELLATION REASONS
+//
+// A fixed list rather than free text, so "why do people
+// cancel" is a question the reports can actually answer.
+// The storefront renders these as a dropdown.
+// ======================================================
+
+const CANCEL_REASONS = [
+  {
+    code: "ordered_by_mistake",
+    label:
+      "I ordered this by mistake",
+  },
+  {
+    code: "found_better_price",
+    label:
+      "I found a better price elsewhere",
+  },
+  {
+    code: "changed_mind",
+    label:
+      "I changed my mind",
+  },
+  {
+    code: "wrong_item",
+    label:
+      "I ordered the wrong item",
+  },
+  {
+    code: "duplicate_order",
+    label:
+      "I placed this order twice",
+  },
+  {
+    code: "delivery_too_slow",
+    label:
+      "Delivery is taking too long",
+  },
+  {
+    code: "address_issue",
+    label:
+      "I need to change the delivery address",
+  },
+  {
+    code: "other",
+    label: "Something else",
+  },
+];
+
+const CANCEL_REASON_CODES =
+  CANCEL_REASONS.map(
+    (r) => r.code
+  );
+
+const cancelReasonLabel = (
+  code
+) =>
+  CANCEL_REASONS.find(
+    (r) => r.code === code
+  )?.label || null;
+
+// ======================================================
 // COD AVAILABILITY
 //
 // Cash on delivery carries real risk (refused parcels),
@@ -345,6 +407,9 @@ const calculateTotals = (
 
 module.exports = {
   ORDER_STATUSES,
+  CANCEL_REASONS,
+  CANCEL_REASON_CODES,
+  cancelReasonLabel,
   ALLOWED_TRANSITIONS,
   CUSTOMER_CANCELLABLE,
   canTransition,

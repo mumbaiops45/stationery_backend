@@ -13,6 +13,9 @@ const {
   deductStockForCart,
   calculateTotals,
   codRejectionReason,
+  CANCEL_REASONS,
+  CANCEL_REASON_CODES,
+  cancelReasonLabel,
 } = require("../utils/orderStock");
 
 const generateOrderNumber = () => {
@@ -239,6 +242,31 @@ const getAdminOrders = async (
 
 
 // ======================================================
+// CANCELLATION REASONS
+//
+// Feeds the dropdown on the storefront so the list lives
+// in one place instead of being copied into the frontend.
+// ======================================================
+
+const getCancelReasons = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      data: {
+        cancelReasons:
+          CANCEL_REASONS,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ======================================================
 // CANCEL MY ORDER
 //
 // Customer-facing. Only before dispatch. Returns stock
@@ -256,7 +284,10 @@ const cancelMyOrder = async (
   try {
     const { id } = req.params;
 
-    const { reason } = req.body || {};
+    const {
+      reasonCode,
+      reason,
+    } = req.body || {};
 
     if (
       !mongoose.Types.ObjectId.isValid(id)
@@ -264,6 +295,40 @@ const cancelMyOrder = async (
       return res.status(400).json({
         success: false,
         message: "Invalid order ID",
+      });
+    }
+
+    // Reason is required, and must come from the list the
+    // storefront was given by GET /api/orders/cancel-reasons.
+    if (
+      !CANCEL_REASON_CODES.includes(
+        reasonCode
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please choose a reason for cancelling",
+        data: {
+          cancelReasons:
+            CANCEL_REASONS,
+        },
+      });
+    }
+
+    const note = (reason || "")
+      .toString()
+      .trim();
+
+    // "Something else" tells us nothing on its own.
+    if (
+      reasonCode === "other" &&
+      note.length < 3
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please tell us a little more about why you are cancelling",
       });
     }
 
@@ -332,11 +397,19 @@ const cancelMyOrder = async (
         "failed";
     }
 
+    order.cancelReasonCode =
+      reasonCode;
+
     order.cancelReason =
-      (reason || "Cancelled by customer")
-        .toString()
-        .trim()
-        .slice(0, 300);
+      (
+        note ||
+        cancelReasonLabel(
+          reasonCode
+        )
+      ).slice(0, 300);
+
+    order.cancelledBy =
+      "customer";
 
     await order.save({
       session,
@@ -357,6 +430,10 @@ const cancelMyOrder = async (
             order.orderStatus,
           cancelledAt:
             order.cancelledAt,
+          cancelReasonCode:
+            order.cancelReasonCode,
+          cancelReason:
+            order.cancelReason,
         },
       },
     });
@@ -448,6 +525,7 @@ const updateOrderStatus = async (
 
     const {
       orderStatus,
+      reasonCode,
       reason,
     } = req.body;
 
@@ -533,11 +611,20 @@ const updateOrderStatus = async (
       order.cancelledAt =
         new Date();
 
+      order.cancelReasonCode =
+        CANCEL_REASON_CODES.includes(
+          reasonCode
+        )
+          ? reasonCode
+          : "other";
+
       order.cancelReason =
         (reason || "Cancelled by admin")
           .toString()
           .trim()
           .slice(0, 300);
+
+      order.cancelledBy = "admin";
     }
 
     if (
@@ -825,6 +912,7 @@ module.exports = {
   getMyOrders,
   getMyOrder,
   placeCodOrder,
+  getCancelReasons,
   cancelMyOrder,
   getAdminOrders,
   getAdminOrder,

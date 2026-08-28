@@ -223,6 +223,27 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Picked from a fixed list so cancellations can be
+    // grouped and reported on.
+    cancelReasonCode: {
+      type: String,
+      enum: [
+        "ordered_by_mistake",
+        "found_better_price",
+        "changed_mind",
+        "wrong_item",
+        "duplicate_order",
+        "delivery_too_slow",
+        "address_issue",
+        "other",
+        null,
+      ],
+      default: null,
+      index: true,
+    },
+
+    // The customer's own words, or the label of the code
+    // above when they did not add anything.
     cancelReason: {
       type: String,
       default: null,
@@ -231,6 +252,12 @@ const orderSchema = new mongoose.Schema(
         300,
         "Cancel reason cannot exceed 300 characters",
       ],
+    },
+
+    cancelledBy: {
+      type: String,
+      enum: ["customer", "admin", null],
+      default: null,
     },
 
     // Set the moment stock is returned to inventory.

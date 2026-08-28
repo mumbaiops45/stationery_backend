@@ -4,6 +4,7 @@ const {
   getMyOrders,
   getMyOrder,
   placeCodOrder,
+  getCancelReasons,
   cancelMyOrder,
 } = require("../controllers/order.controller");
 
@@ -20,16 +21,23 @@ router.get(
   getMyOrders
 );
 
-router.get(
-  "/:id",
-  getMyOrder
-);
-
 // Place a cash-on-delivery order.
 // The online route is POST /api/payment/create-order.
 router.post(
   "/",
   placeCodOrder
+);
+
+// The cancellation dropdown. Declared before "/:id" or
+// Express would read "cancel-reasons" as an order id.
+router.get(
+  "/cancel-reasons",
+  getCancelReasons
+);
+
+router.get(
+  "/:id",
+  getMyOrder
 );
 
 // Cancel an order (before dispatch only)
