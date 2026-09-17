@@ -6,6 +6,7 @@ const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
 const addressRoutes = require("./routes/address.routes");
 const categoryRoutes = require("./routes/category.routes");
+const bannerRoutes = require("./routes/banner.routes");
 const productRoutes = require("./routes/product.routes");
 const variantRoutes = require("./routes/variant.routes");
 const inventoryRoutes = require("./routes/inventory.routes");
@@ -119,6 +120,10 @@ app.use(
 app.use(
   "/api/categories",
   categoryRoutes
+);
+app.use(
+  "/api/banners",
+  bannerRoutes
 );
 
 app.use(
