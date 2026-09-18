@@ -153,19 +153,38 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
-    // How the customer chose to pay.
-    // "online" clears through Razorpay before the order
-    // exists; "cod" creates the order straight away and
-    // the money is collected on the doorstep.
+    // Free gift the customer picked after crossing the free-gift
+    // threshold. Not a real order item - price 0, stock untouched,
+    // admin packs it in manually. Null when no gift was chosen.
+    giftProduct: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      default: null,
+    },
+
+    giftProductName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    giftProductImage: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    // How the customer chose to pay. Online (Razorpay) only -
+    // cash on delivery is not offered.
     paymentMethod: {
       type: String,
-      enum: ["online", "cod"],
+      enum: ["online"],
       default: "online",
       required: true,
       index: true,
     },
 
-    // Razorpay fields below are null on a COD order,
+    // Razorpay fields below are all populated once verified,
     // which is why none of them are required.
     payment: {
       type: mongoose.Schema.Types.ObjectId,
@@ -197,8 +216,7 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Stamped when money actually lands: at verification
-    // for online, at delivery for COD.
+    // Stamped when payment is verified.
     paidAt: {
       type: Date,
       default: null,
@@ -216,6 +234,45 @@ const orderSchema = new mongoose.Schema(
       ],
       default: "confirmed",
       index: true,
+    },
+
+    // Pushed to Shiprocket right after the order is created. Best-effort:
+    // a failure here never blocks checkout, since the customer has already
+    // paid. "status" lets the admin panel show what happened and retry.
+    shiprocket: {
+      shiprocketOrderId: {
+        type: String,
+        default: null,
+      },
+      shipmentId: {
+        type: String,
+        default: null,
+      },
+      awbCode: {
+        type: String,
+        default: null,
+      },
+      courierName: {
+        type: String,
+        default: null,
+      },
+      status: {
+        type: String,
+        enum: [
+          "not_pushed",
+          "created",
+          "failed",
+        ],
+        default: "not_pushed",
+      },
+      error: {
+        type: String,
+        default: null,
+      },
+      pushedAt: {
+        type: Date,
+        default: null,
+      },
     },
 
     cancelledAt: {

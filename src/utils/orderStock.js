@@ -1,5 +1,6 @@
 const Product = require("../models/Product");
 const ProductVariant = require("../models/ProductVariant");
+const Setting = require("../models/Setting");
 
 // ======================================================
 // ORDER STATUS RULES
@@ -184,47 +185,6 @@ const cancelReasonLabel = (
   )?.label || null;
 
 // ======================================================
-// COD AVAILABILITY
-//
-// Cash on delivery carries real risk (refused parcels),
-// so it can be switched off or capped without a redeploy.
-// ======================================================
-
-const isCodEnabled = () =>
-  process.env.COD_ENABLED !==
-  "false";
-
-const getCodMaxOrderValue = () => {
-  const raw = Number(
-    process.env
-      .COD_MAX_ORDER_VALUE
-  );
-
-  return Number.isFinite(raw) &&
-    raw > 0
-    ? raw
-    : null;
-};
-
-// Returns null when COD is allowed, or the reason it is not.
-const codRejectionReason = (
-  total
-) => {
-  if (!isCodEnabled()) {
-    return "Cash on delivery is currently unavailable";
-  }
-
-  const max =
-    getCodMaxOrderValue();
-
-  if (max && total > max) {
-    return `Cash on delivery is only available on orders up to ₹${max}`;
-  }
-
-  return null;
-};
-
-// ======================================================
 // DEDUCT STOCK FOR A CART
 //
 // Builds the order line items and takes the stock in one
@@ -382,26 +342,83 @@ const deductStockForCart = async (
 // ======================================================
 // TOTALS
 //
-// One place, so checkout, COD and Razorpay can never
-// quote different numbers for the same cart.
+// One place, so checkout and Razorpay can never quote
+// different numbers for the same cart. Shipping charge and
+// free-shipping threshold come from the admin-editable
+// Setting singleton, so pricing changes need no redeploy.
 // ======================================================
 
-const FREE_SHIPPING_THRESHOLD = 500;
-const SHIPPING_FLAT = 50;
-
-const calculateTotals = (
+const calculateTotals = async (
   subtotal
 ) => {
+  const setting =
+    await Setting.getSingleton();
+
   const shipping =
     subtotal >=
-    FREE_SHIPPING_THRESHOLD
+    setting.freeShippingThreshold
       ? 0
-      : SHIPPING_FLAT;
+      : setting.shippingCharge;
+
+  const giftEligible =
+    subtotal >=
+    setting.freeGiftThreshold;
 
   return {
     subtotal,
     shipping,
     total: subtotal + shipping,
+    freeGiftThreshold:
+      setting.freeGiftThreshold,
+    giftEligible,
+    // Whether a gift will actually be attached needs the product
+    // to exist too - being past the threshold is not enough if
+    // admin has not configured one yet.
+    hasFreeGiftProduct: Boolean(
+      giftEligible &&
+        setting.freeGiftProduct
+    ),
+  };
+};
+
+// ======================================================
+// FREE GIFT SELECTION
+//
+// The gift is one fixed product admin configures in Settings,
+// not something the customer picks - so this just looks it up
+// and confirms it is still real. Re-run wherever an order is
+// created, same as stock and price: never trust a cached value.
+// ======================================================
+
+const resolveGiftSelection = async (
+  giftEligible
+) => {
+  if (!giftEligible) {
+    return null;
+  }
+
+  const setting =
+    await Setting.getSingleton();
+
+  if (!setting.freeGiftProduct) {
+    return null;
+  }
+
+  const giftProduct =
+    await Product.findOne({
+      _id: setting.freeGiftProduct,
+      isActive: true,
+    }).lean();
+
+  if (!giftProduct) {
+    return null;
+  }
+
+  return {
+    giftProduct: giftProduct._id,
+    giftProductName: giftProduct.name,
+    giftProductImage:
+      giftProduct.image?.url || "",
   };
 };
 
@@ -416,10 +433,6 @@ module.exports = {
   restoreOrderStock,
   deductStockForCart,
   calculateTotals,
-  isCodEnabled,
-  getCodMaxOrderValue,
-  codRejectionReason,
-  FREE_SHIPPING_THRESHOLD,
-  SHIPPING_FLAT,
+  resolveGiftSelection,
 };
 

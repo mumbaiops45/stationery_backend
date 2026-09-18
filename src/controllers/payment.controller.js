@@ -8,6 +8,13 @@ const Address = require("../models/Address");
 const Product = require("../models/Product");
 const ProductVariant = require("../models/ProductVariant");
 const Payment = require("../models/Payment");
+const {
+  calculateTotals,
+  resolveGiftSelection,
+} = require("../utils/orderStock");
+const {
+  createShiprocketOrder,
+} = require("../services/shiprocket");
 
 // ======================================================
 // RAZORPAY INSTANCE
@@ -111,13 +118,12 @@ const calculateCheckoutAmount = async (
     });
   }
 
-  const shipping =
-    subtotal >= 500
-      ? 0
-      : 50;
-
-  const total =
-    subtotal + shipping;
+  const {
+    shipping,
+    total,
+    freeGiftThreshold,
+    giftEligible,
+  } = await calculateTotals(subtotal);
 
   return {
     cart,
@@ -126,6 +132,8 @@ const calculateCheckoutAmount = async (
     subtotal,
     shipping,
     total,
+    freeGiftThreshold,
+    giftEligible,
   };
 };
 
@@ -558,13 +566,19 @@ const verifyPayment = async (
       });
     }
 
-    const shipping =
-      subtotal >= 500
-        ? 0
-        : 50;
+    const {
+      shipping,
+      total,
+      giftEligible,
+    } = await calculateTotals(subtotal);
 
-    const total =
-      subtotal + shipping;
+    // Resolved fresh from the current Setting, same as shipping -
+    // if admin changed or cleared the gift product between checkout
+    // and now, this reflects that rather than a stale choice.
+    const giftSelection =
+      await resolveGiftSelection(
+        giftEligible
+      );
 
     // ==================================================
     // VERIFY PAYMENT AMOUNT
@@ -626,6 +640,18 @@ const verifyPayment = async (
 
             total,
 
+            giftProduct:
+              giftSelection?.giftProduct ||
+              null,
+
+            giftProductName:
+              giftSelection?.giftProductName ||
+              "",
+
+            giftProductImage:
+              giftSelection?.giftProductImage ||
+              "",
+
             payment:
               payment._id,
 
@@ -681,6 +707,42 @@ const verifyPayment = async (
 
     await session.commitTransaction();
 
+    // ==================================================
+    // PUSH TO SHIPROCKET
+    //
+    // Runs after commit, outside the transaction: the order
+    // is already real and paid for, so a Shiprocket failure
+    // must never undo it or fail this response. Recorded on
+    // the order so the admin panel can see it and retry.
+    // ==================================================
+
+    try {
+      const shipment = await createShiprocketOrder(order);
+
+      order.shiprocket = {
+        shiprocketOrderId: shipment.shiprocketOrderId,
+        shipmentId: shipment.shipmentId,
+        awbCode: shipment.awbCode,
+        courierName: shipment.courierName,
+        status: "created",
+        error: null,
+        pushedAt: new Date(),
+      };
+    } catch (shiprocketError) {
+      console.error(
+        `Shiprocket push failed for order ${order.orderNumber}:`,
+        shiprocketError.message
+      );
+
+      order.shiprocket = {
+        status: "failed",
+        error: shiprocketError.message,
+        pushedAt: new Date(),
+      };
+    }
+
+    await order.save();
+
     return res.status(201).json({
       success: true,
       message:
@@ -692,6 +754,10 @@ const verifyPayment = async (
             order.orderNumber,
           total:
             order.total,
+          giftProductName:
+            order.giftProductName,
+          giftProductImage:
+            order.giftProductImage,
           paymentStatus:
             order.paymentStatus,
           orderStatus:

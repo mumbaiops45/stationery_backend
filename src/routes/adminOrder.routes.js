@@ -4,6 +4,7 @@ const {
   getAdminOrders,
   getAdminOrder,
   updateOrderStatus,
+  retryShiprocket,
 } = require("../controllers/order.controller");
 
 const {
@@ -36,6 +37,12 @@ router.get(
 router.patch(
   "/:id/status",
   updateOrderStatus
+);
+
+// Retry a failed (or not-yet-attempted) Shiprocket push
+router.post(
+  "/:id/retry-shiprocket",
+  retryShiprocket
 );
 
 module.exports = router;

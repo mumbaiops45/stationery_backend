@@ -21,6 +21,8 @@ const adminUserRoutes = require("./routes/adminUser.routes");
 const adminDashboardRoutes = require("./routes/adminDashboard.routes");
 const adminPaymentRoutes = require("./routes/adminPayment.routes");
 const reportRoutes = require("./routes/report.routes");
+const settingRoutes = require("./routes/setting.routes");
+const publicSettingRoutes = require("./routes/publicSetting.routes");
 const errorHandler = require("./middleware/error.middleware");
 
 const app = express();
@@ -186,6 +188,14 @@ app.use(
 app.use(
   "/api/admin/reports",
   reportRoutes
+);
+app.use(
+  "/api/admin/settings",
+  settingRoutes
+);
+app.use(
+  "/api/settings",
+  publicSettingRoutes
 );
 app.use(errorHandler);
 

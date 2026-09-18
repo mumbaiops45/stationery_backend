@@ -5,7 +5,8 @@ const Address = require("../models/Address");
 const Product = require("../models/Product");
 const ProductVariant = require("../models/ProductVariant");
 const {
-  codRejectionReason,
+  calculateTotals,
+  resolveGiftSelection,
 } = require("../utils/orderStock");
 
 // ======================================================
@@ -160,17 +161,17 @@ const getCheckout = async (req, res, next) => {
     // Shipping
     // --------------------------------------------------
 
-    // For now:
-    // Free shipping above ₹500
-    // ₹50 otherwise
+    const {
+      shipping,
+      total,
+      freeGiftThreshold,
+      giftEligible,
+    } = await calculateTotals(subtotal);
 
-    const shipping =
-      subtotal >= 500
-        ? 0
-        : 50;
-
-    const total =
-      subtotal + shipping;
+    const giftSelection =
+      await resolveGiftSelection(
+        giftEligible
+      );
 
     // --------------------------------------------------
     // Response
@@ -203,9 +204,26 @@ const getCheckout = async (req, res, next) => {
             total,
           },
 
-          // Which buttons the checkout screen should offer.
-          // Availability is decided here so the frontend
-          // never has to know the COD rules.
+          // So the checkout screen can show "Add ₹X more for a
+          // free gift!" and, once eligible, what that gift is -
+          // there is one fixed gift product, not a picker.
+          freeGift: {
+            threshold: freeGiftThreshold,
+            eligible: giftEligible,
+            productName:
+              giftSelection?.giftProductName ||
+              "",
+            productImage:
+              giftSelection?.giftProductImage ||
+              "",
+            amountToUnlock: Math.max(
+              0,
+              freeGiftThreshold - subtotal
+            ),
+          },
+
+          // Only one payment method exists today, but this
+          // stays an array so the frontend doesn't special-case it.
           paymentMethods: [
             {
               id: "online",
@@ -214,19 +232,6 @@ const getCheckout = async (req, res, next) => {
               available: true,
               unavailableReason:
                 null,
-            },
-            {
-              id: "cod",
-              label:
-                "Cash on delivery",
-              available:
-                codRejectionReason(
-                  total
-                ) === null,
-              unavailableReason:
-                codRejectionReason(
-                  total
-                ),
             },
           ],
         },

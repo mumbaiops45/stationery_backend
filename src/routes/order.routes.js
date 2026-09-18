@@ -3,7 +3,6 @@ const express = require("express");
 const {
   getMyOrders,
   getMyOrder,
-  placeCodOrder,
   getCancelReasons,
   cancelMyOrder,
 } = require("../controllers/order.controller");
@@ -19,13 +18,6 @@ router.use(protect);
 router.get(
   "/",
   getMyOrders
-);
-
-// Place a cash-on-delivery order.
-// The online route is POST /api/payment/create-order.
-router.post(
-  "/",
-  placeCodOrder
 );
 
 // The cancellation dropdown. Declared before "/:id" or
