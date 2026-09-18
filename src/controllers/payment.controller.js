@@ -27,6 +27,40 @@ const razorpay = new Razorpay({
 });
 
 // ======================================================
+// NORMALIZE RAZORPAY ERRORS
+//
+// The SDK throws Razorpay's raw API error - a plain object
+// like { statusCode: 401, error: { description: "..." } } -
+// which is not an Error and has no top-level .message. Left
+// alone, that reaches error.middleware.js as a 401 with no
+// message, which renders as "Internal server error" and,
+// worse, looks exactly like OUR auth failing when it is
+// really OUR Razorpay keys that are wrong or expired. A 401
+// here is never the customer's session - remap it to 502 so
+// it reads as "the payment gateway rejected us", and carry
+// Razorpay's real explanation through as the message.
+// ======================================================
+
+const normalizeRazorpayError = (
+  error
+) => {
+  if (!error?.error?.description) {
+    return error;
+  }
+
+  const wrapped = new Error(
+    error.error.description
+  );
+
+  wrapped.statusCode =
+    error.statusCode === 401
+      ? 502
+      : error.statusCode || 502;
+
+  return wrapped;
+};
+
+// ======================================================
 // CALCULATE CHECKOUT AMOUNT
 // ======================================================
 
@@ -261,7 +295,9 @@ const createPaymentOrder = async (
       },
     });
   } catch (error) {
-    next(error);
+    next(
+      normalizeRazorpayError(error)
+    );
   }
 };
 
@@ -768,7 +804,9 @@ const verifyPayment = async (
   } catch (error) {
     await session.abortTransaction();
 
-    next(error);
+    next(
+      normalizeRazorpayError(error)
+    );
   } finally {
     session.endSession();
   }
@@ -1129,15 +1167,9 @@ const refundPayment = async (
       },
     });
   } catch (error) {
-    // Razorpay errors carry the useful text one level down
-    if (error?.error?.description) {
-      error.message =
-        error.error.description;
-
-      error.statusCode = 400;
-    }
-
-    next(error);
+    next(
+      normalizeRazorpayError(error)
+    );
   }
 };
 
