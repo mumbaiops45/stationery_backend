@@ -10,7 +10,12 @@
 // dependency needed for one small integration.
 // ======================================================
 
+const User = require("../models/User");
+
 const BASE = "https://apiv2.shiprocket.in/v1/external";
+
+// Without a limit, fetch() waits on a stalled Shiprocket for minutes.
+const REQUEST_TIMEOUT_MS = 20000;
 
 // Package defaults. Weights are kg, dimensions are cm, per
 // Shiprocket's API. Adjust if the store starts shipping
@@ -28,13 +33,25 @@ let _token = null;
 let _tokenExpiresAt = 0;
 
 async function shiprocketFetch(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...options,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+  } catch (error) {
+    const err = new Error(
+      error?.name === "TimeoutError"
+        ? `Shiprocket did not respond within ${REQUEST_TIMEOUT_MS / 1000}s`
+        : `Could not reach Shiprocket: ${error?.message || error}`
+    );
+    err.status = 504;
+    throw err;
+  }
 
   const text = await res.text();
   let data = null;
@@ -97,9 +114,20 @@ function digitsOnly(v) {
   return String(v ?? "").replace(/\D/g, "");
 }
 
+// The Order only stores the user's id, and Shiprocket's create-order call
+// requires billing_email - an empty string is rejected - so read it from
+// the account that placed the order.
+async function customerEmail(order) {
+  const userId = order.user?._id || order.user;
+  if (!userId) return "";
+
+  const user = await User.findById(userId).select("email").lean();
+  return user?.email || "";
+}
+
 // Builds the Shiprocket "Create Adhoc Order" payload from our Order
 // document. Field names follow Shiprocket's docs exactly.
-function buildPayload(order) {
+function buildPayload(order, email) {
   const addr = order.shippingAddress || {};
   const { first, last } = splitName(addr.name);
   const items = Array.isArray(order.items) ? order.items : [];
@@ -124,7 +152,7 @@ function buildPayload(order) {
     billing_pincode: pincodeNum,
     billing_state: addr.state || "",
     billing_country: addr.country || "India",
-    billing_email: "",
+    billing_email: email,
     billing_phone: phoneDigits,
     shipping_is_billing: true,
     order_items: items.map((it) => ({
@@ -150,7 +178,7 @@ function buildPayload(order) {
 // Returns { shiprocketOrderId, shipmentId, awbCode, courierName } on
 // success. Throws on failure - the caller decides how to record that.
 async function createShiprocketOrder(order) {
-  const payload = buildPayload(order);
+  const payload = buildPayload(order, await customerEmail(order));
 
   // Validate up-front so a bad address fails fast with a message that
   // names the field, instead of Shiprocket's generic 422.
@@ -165,6 +193,7 @@ async function createShiprocketOrder(order) {
       `billing_phone "${payload.billing_phone}" (raw="${order.shippingAddress?.phone}") is not 10 digits`
     );
   }
+  if (!payload.billing_email) errs.push("billing_email is empty");
   if (!payload.billing_address) errs.push("billing_address is empty");
   if (!payload.billing_city) errs.push("billing_city is empty");
   if (!payload.billing_state) errs.push("billing_state is empty");

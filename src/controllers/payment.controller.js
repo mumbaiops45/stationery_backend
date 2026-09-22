@@ -744,6 +744,42 @@ const verifyPayment = async (
     await session.commitTransaction();
 
     // ==================================================
+    // RESPOND FIRST
+    //
+    // The order is committed and the cart is already empty,
+    // so tell the storefront now. The Shiprocket push below
+    // (login + create order) can take several seconds and
+    // used to sit in front of this response: when it ran
+    // long the browser's request timed out, the cart on the
+    // page kept listing items the server had already
+    // emptied, and the next /checkout call answered
+    // "Your cart is empty".
+    // ==================================================
+
+    res.status(201).json({
+      success: true,
+      message:
+        "Payment verified and order created successfully",
+      data: {
+        order: {
+          id: order._id,
+          orderNumber:
+            order.orderNumber,
+          total:
+            order.total,
+          giftProductName:
+            order.giftProductName,
+          giftProductImage:
+            order.giftProductImage,
+          paymentStatus:
+            order.paymentStatus,
+          orderStatus:
+            order.orderStatus,
+        },
+      },
+    });
+
+    // ==================================================
     // PUSH TO SHIPROCKET
     //
     // Runs after commit, outside the transaction: the order
@@ -777,32 +813,23 @@ const verifyPayment = async (
       };
     }
 
-    await order.save();
-
-    return res.status(201).json({
-      success: true,
-      message:
-        "Payment verified and order created successfully",
-      data: {
-        order: {
-          id: order._id,
-          orderNumber:
-            order.orderNumber,
-          total:
-            order.total,
-          giftProductName:
-            order.giftProductName,
-          giftProductImage:
-            order.giftProductImage,
-          paymentStatus:
-            order.paymentStatus,
-          orderStatus:
-            order.orderStatus,
-        },
-      },
-    });
+    // The response has gone out, so a failure here can only be
+    // logged - it must not reach the error handler below.
+    try {
+      await order.save();
+    } catch (saveError) {
+      console.error(
+        `Could not record the Shiprocket result for order ${order.orderNumber}:`,
+        saveError.message
+      );
+    }
   } catch (error) {
-    await session.abortTransaction();
+    // Aborting is only valid while a transaction is open. Before
+    // startTransaction() or after commitTransaction() it throws,
+    // which left the request without any response.
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
 
     next(
       normalizeRazorpayError(error)
