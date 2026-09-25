@@ -118,10 +118,21 @@ const getAdminOrders = async (
       search = "",
       orderStatus = "all",
       paymentStatus = "all",
+      userId = "",
       sort = "newest",
       page = 1,
       limit = 20,
     } = req.query;
+
+    if (
+      userId &&
+      !mongoose.Types.ObjectId.isValid(userId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "userId is not a valid id",
+      });
+    }
 
     // --------------------------------------------------
     // PAGINATION
@@ -168,6 +179,11 @@ const getAdminOrders = async (
         $regex: search.trim(),
         $options: "i",
       };
+    }
+
+    // One customer's order history
+    if (userId) {
+      filter.user = userId;
     }
 
     // --------------------------------------------------
@@ -230,6 +246,7 @@ const getAdminOrders = async (
             search.trim(),
           orderStatus,
           paymentStatus,
+          userId,
           sort,
         },
       },
